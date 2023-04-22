@@ -262,6 +262,7 @@ public class LibraryTest {
     public void removeBookTest() {
         /* simply insert some data to database */
         MyLibrary my = MyLibrary.createLibrary(library, 100, 1, 0);
+
         /* remove a non-exist book */
         Assert.assertFalse(library.removeBook(-1).ok);
         /* remove a book that someone has not returned yet */

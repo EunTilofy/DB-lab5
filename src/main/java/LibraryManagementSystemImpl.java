@@ -35,10 +35,8 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             String author = book.getAuthor();
             double price = book.getPrice();
             int stock = book.getStock();
-
             String que_exist = "SELECT * FROM book WHERE " +
                     "category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?";
-
             PreparedStatement que_stmt = conn.prepareStatement(que_exist);
             que_stmt.setString(1, category);
             que_stmt.setString(2, title);
@@ -222,6 +220,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 rollback(conn);
                 return new ApiResult(false, "fail to remove book");
             }
+            commit(conn);
         } catch (Exception e) {
             rollback(conn);
             return new ApiResult(false, e.getMessage());

@@ -191,7 +191,37 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult removeBook(int bookId) {
-        return new ApiResult(false, "Unimplemented Function");
+        Connection conn = connector.getConn();
+        try {
+            String book_sql = "SELECT * FROM book WHERE book_id = ?";
+            PreparedStatement book_stmt = conn.prepareStatement(book_sql);
+            book_stmt.setInt(1, bookId);
+            ResultSet ret0 = book_stmt.executeQuery();
+            if(!ret0.next()) {
+                rollback(conn);
+                return new ApiResult(false, "book not exists");
+            }
+            String que_sql = "SELECT * FROM borrow WHERE book_id = ? AND return_time = 0";
+            PreparedStatement que_stmt = conn.prepareStatement(que_sql);
+            que_stmt.setInt(1, bookId);
+            ResultSet ret = que_stmt.executeQuery();
+            if(ret.next()){
+                rollback(conn);
+                return new ApiResult(false, "book been borrowed");
+            }
+            String del_sql = "DELETE FROM book WHERE book_id = ?";
+            PreparedStatement del_stmt = conn.prepareStatement(del_sql);
+            del_stmt.setInt(1, bookId);
+            int ret2 = del_stmt.executeUpdate();
+            if(ret2 != 1) {
+                rollback(conn);
+                return new ApiResult(false, "fail to remove book");
+            }
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
+        return new ApiResult(true, null);
     }
 
     /*
@@ -325,7 +355,57 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult borrowBook(Borrow borrow) {
-        return new ApiResult(false, "Unimplemented Function");
+        Connection conn = connector.getConn();
+        try {
+            String que_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND return_time = 0";
+            PreparedStatement que_stmt = conn.prepareStatement(que_sql);
+            que_stmt.setInt(1, borrow.getCardId());
+            que_stmt.setInt(2, borrow.getBookId());
+            ResultSet ret = que_stmt.executeQuery();
+            if(ret.next()) {
+                rollback(conn);
+                return new ApiResult(false, "Has not return yet");
+            }
+            if(!incBookStock(borrow.getBookId(), -1).ok) {
+                rollback(conn);
+                return new ApiResult(false, "failed to update stock");
+            }
+//            System.err.println("try borrow now");
+            String insert_sql = "INSERT INTO borrow (card_id, book_id, borrow_time)" +
+                    " VALUES(?, ?, ?)";
+            PreparedStatement insert_stmt = conn.prepareStatement(insert_sql);
+            insert_stmt.setInt(1, borrow.getCardId());
+            insert_stmt.setInt(2, borrow.getBookId());
+            insert_stmt.setLong(3, borrow.getBorrowTime());
+            int len = insert_stmt.executeUpdate();
+            if(len != 1) {
+                rollback(conn);
+                return new ApiResult(false, "failed to borrow");
+            }
+//            System.err.println("borrow successed");
+
+//            /**************/
+//            String que2_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND borrow_time = ?";
+//            PreparedStatement que2_stmt = conn.prepareStatement(que2_sql);
+//            que2_stmt.setInt(1, borrow.getCardId());
+//            que2_stmt.setInt(2, borrow.getBookId());
+//            que2_stmt.setLong(3, borrow.getBorrowTime());
+//            ResultSet ret2 = que2_stmt.executeQuery();
+//            if(!ret2.next()) {
+//                System.err.println("a?????? no borrow record");
+//                rollback(conn);
+//                return new ApiResult(false, "No borrow record");
+//            }
+            commit(conn);
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
+//        System.err.println("borrow");
+//        System.err.println(borrow.getCardId());
+//        System.err.println(borrow.getBookId());
+//        System.err.println(borrow.getBorrowTime());
+        return new ApiResult(true, null);
     }
 
     /*
@@ -334,7 +414,54 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult returnBook(Borrow borrow) {
-        return new ApiResult(false, "Unimplemented Function");
+
+//        showBorrowHistory(borrow.getCardId());
+//        System.err.println("try return");
+//        System.err.println(borrow.getCardId());
+//        System.err.println(borrow.getBookId());
+//        System.err.println(borrow.getBorrowTime());
+        Connection conn = connector.getConn();
+        try {
+            String que_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND borrow_time = ?";
+            PreparedStatement que_stmt = conn.prepareStatement(que_sql);
+            que_stmt.setInt(1, borrow.getCardId());
+            que_stmt.setInt(2, borrow.getBookId());
+            que_stmt.setLong(3, borrow.getBorrowTime());
+            if(borrow.getReturnTime() < borrow.getBorrowTime()) {
+                rollback(conn);
+                return new ApiResult(false, "return before borrow");
+            }
+            ResultSet ret = que_stmt.executeQuery();
+            if(!ret.next()) {
+//                System.err.println("no borrow record");
+                rollback(conn);
+                return new ApiResult(false, "No borrow record");
+            }
+            if(!incBookStock(borrow.getBookId(), 1).ok) {
+//                System.err.println("stock");
+                rollback(conn);
+                return new ApiResult(false, "failed to update stock");
+            }
+            String insert_sql = "UPDATE borrow SET return_time = ? " +
+                    "WHERE card_id = ? AND book_id = ? AND borrow_time = ?";
+//            System.err.println(insert_sql);
+            PreparedStatement insert_stmt = conn.prepareStatement(insert_sql);
+            insert_stmt.setLong(1, borrow.getReturnTime());
+            insert_stmt.setInt(2, borrow.getCardId());
+            insert_stmt.setInt(3, borrow.getBookId());
+            insert_stmt.setLong(4, borrow.getBorrowTime());
+            int len = insert_stmt.executeUpdate();
+            if(len != 1) {
+//                System.err.println("len != 1");
+                rollback(conn);
+                return new ApiResult(false, "failed to return");
+            }
+            commit(conn);
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
+        return new ApiResult(true, null);
     }
 
     /*
@@ -343,7 +470,37 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult showBorrowHistory(int cardId) {
-        return new ApiResult(false, "Unimplemented Function");
+        Connection conn = connector.getConn();
+        try {
+            String show_sql = "SELECT * FROM borrow NATURAL JOIN book WHERE card_id = ? ORDER BY borrow_time DESC, book_id ASC";
+            PreparedStatement stmt = conn.prepareStatement(show_sql);
+            stmt.setInt(1, cardId);
+//            System.err.println("show borrow history");
+//            System.err.println(show_sql);
+            ResultSet ret = stmt.executeQuery();
+            List<BorrowHistories.Item> items = new ArrayList<>();
+//            System.err.println("show borrow history");
+            while(ret.next()) {
+                BorrowHistories.Item item = new BorrowHistories.Item();
+                item.setAuthor(ret.getString("author"));
+                item.setBorrowTime(ret.getLong("borrow_time"));
+                item.setCategory(ret.getString("category"));
+                item.setPress(ret.getString("press"));
+                item.setPrice(ret.getDouble("price"));
+                item.setBookId(ret.getInt("book_id"));
+                item.setTitle(ret.getString("title"));
+                item.setReturnTime(ret.getLong("return_time"));
+                item.setPublishYear(ret.getInt("publish_year"));
+                item.setCardId(ret.getInt("card_id"));
+//                System.err.println(item.getBookId());
+                items.add(item);
+            }
+            commit(conn);
+            return new ApiResult(true, null, new BorrowHistories(items));
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
     }
 
     /*
@@ -352,7 +509,46 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult registerCard(Card card) {
-        return new ApiResult(false, "Unimplemented Function");
+        Connection conn = connector.getConn();
+        try {
+//            `card_id` int not null auto_increment,
+//    `name` varchar(63) not null,
+//    `department` varchar(63) not null,
+//    `type` char(1) not null,
+            String que_sql = "SELECT * FROM card WHERE " +
+                    "name = ? AND department = ? AND type = ?";
+            PreparedStatement que_stmt = conn.prepareStatement(que_sql);
+            que_stmt.setString(1, card.getName());
+            que_stmt.setString(2, card.getDepartment());
+            que_stmt.setString(3, card.getType().getStr());
+
+            ResultSet ret = que_stmt.executeQuery();
+
+            if(ret.next()) {
+                rollback(conn);
+                return new ApiResult(false, "card exists");
+            }
+            String insert_sql = "INSERT INTO card (name, department, type) " +
+                    "VALUES(?, ?, ?)";
+            PreparedStatement insert_stmt = conn.prepareStatement(insert_sql, Statement.RETURN_GENERATED_KEYS);
+            insert_stmt.setString(1, card.getName());
+            insert_stmt.setString(2, card.getDepartment());
+            insert_stmt.setObject(3, card.getType().getStr());
+            int len = insert_stmt.executeUpdate();
+            if(len != 1){
+                rollback(conn);
+                return new ApiResult(false, "register card failed");
+            }
+            commit(conn);
+            ResultSet ret2 = insert_stmt.getGeneratedKeys();
+            if(ret2.next()) {
+                card.setCardId(ret2.getInt(1));
+            }
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
+        return new ApiResult(true, null);
     }
 
     /*
@@ -360,7 +556,39 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult removeCard(int cardId) {
-        return new ApiResult(false, "Unimplemented Function");
+        showBorrowHistory(cardId);
+        Connection conn = connector.getConn();
+        try {
+            String card_sql = "SELECT * FROM card WHERE card_id = ?";
+            PreparedStatement card_stmt = conn.prepareStatement(card_sql);
+            card_stmt.setInt(1, cardId);
+            ResultSet ret0 = card_stmt.executeQuery();
+            if(!ret0.next()) {
+//                System.err.println("card not exists");
+                rollback(conn);
+                return new ApiResult(false, "card not exists");
+            }
+            String que_sql = "SELECT * FROM borrow WHERE card_id = ? AND return_time = 0";
+            PreparedStatement que_stmt = conn.prepareStatement(que_sql);
+            que_stmt.setInt(1, cardId);
+            ResultSet ret = que_stmt.executeQuery();
+            if(ret.next()){
+//                System.err.println("book been borrowed");
+                rollback(conn);
+                return new ApiResult(false, "book been borrowed");
+            }
+//            System.err.println("now delte the card");
+            String del_sql = "DELETE FROM card WHERE card_id = ?";
+            PreparedStatement del_stmt = conn.prepareStatement(del_sql);
+            del_stmt.setInt(1, cardId);
+            int ret1 = del_stmt.executeUpdate();
+            assert(ret1 == 1);
+            commit(conn);
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
+        return new ApiResult(true, null);
     }
 
     /*
@@ -368,7 +596,26 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult showCards() {
-        return new ApiResult(false, "Unimplemented Function");
+        Connection conn = connector.getConn();
+        try {
+            String show_sql = "SELECT * FROM card";
+            PreparedStatement stmt = conn.prepareStatement(show_sql);
+            ResultSet ret = stmt.executeQuery();
+            List<Card> cards = new ArrayList<>();;
+            while(ret.next()) {
+                Card card = new Card();
+                card.setCardId(ret.getInt("card_id"));
+                card.setName(ret.getString("name"));
+                card.setDepartment(ret.getString("department"));
+                card.setType(Card.CardType.values(ret.getString("type")));
+                cards.add(card);
+            }
+            commit(conn);
+            return new ApiResult(true, null, new CardList(cards));
+        } catch (Exception e) {
+            rollback(conn);
+            return new ApiResult(false, e.getMessage());
+        }
     }
 
     @Override

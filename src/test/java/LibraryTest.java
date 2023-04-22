@@ -641,9 +641,12 @@ public class LibraryTest {
         Card delCard = my.cards.get(delPos);
         Borrow borrow = new Borrow(my.books.get(0), delCard);
         borrow.resetBorrowTime();
+//        System.err.println("~~~~~~~~~~borrow a book");
         Assert.assertTrue(library.borrowBook(borrow).ok);
+//        System.err.println("~~~~~~~~~try remove the card");
         Assert.assertFalse(library.removeCard(delCard.getCardId()).ok);
         borrow.resetReturnTime();
+//        System.err.println("~~~~~~~~~~try return the book");
         Assert.assertTrue(library.returnBook(borrow).ok);
         Assert.assertTrue(library.removeCard(delCard.getCardId()).ok);
         /* delete a non-exists card */

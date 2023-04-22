@@ -27,6 +27,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult storeBook(Book book) {
         Connection conn = connector.getConn();
         try{
+            conn.setAutoCommit(false);
             String category = book.getCategory();
             String title = book.getTitle();
             String press = book.getPress();
@@ -85,6 +86,8 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult incBookStock(int bookId, int deltaStock) {
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
+            conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
             String query_sql = "SELECT * FROM book WHERE book_id = ?";
             PreparedStatement que_stmt = conn.prepareStatement(query_sql);
             que_stmt.setInt(1, bookId);
@@ -125,6 +128,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult storeBook(List<Book> books) {
         Connection conn = connector.getConn();
         try{
+            conn.setAutoCommit(false);
             for(int i = 0; i < books.size(); ++i)
                 for(int j = i + 1; j < books.size(); ++j) {
                     Book _i = books.get(i);
@@ -193,6 +197,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult removeBook(int bookId) {
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
             String book_sql = "SELECT * FROM book WHERE book_id = ?";
             PreparedStatement book_stmt = conn.prepareStatement(book_sql);
             book_stmt.setInt(1, bookId);
@@ -231,6 +236,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult modifyBookInfo(Book book) {
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
             String query_sql = "SELECT * FROM book WHERE book_id = ?";
             PreparedStatement que_stmt = conn.prepareStatement(query_sql);
             que_stmt.setInt(1, book.getBookId());
@@ -275,6 +281,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult queryBook(BookQueryConditions conditions) {
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
             String search_sql = "SELECT * FROM book WHERE " +
                     (conditions.getCategory() == null ? "1=1" : "category = ?") +
                     " AND " +
@@ -357,7 +364,9 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult borrowBook(Borrow borrow) {
         Connection conn = connector.getConn();
         try {
-            String que_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND return_time = 0";
+            conn.setAutoCommit(false);
+            conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            String que_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND return_time = 0 FOR UPDATE";
             PreparedStatement que_stmt = conn.prepareStatement(que_sql);
             que_stmt.setInt(1, borrow.getCardId());
             que_stmt.setInt(2, borrow.getBookId());
@@ -366,11 +375,12 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 rollback(conn);
                 return new ApiResult(false, "Has not return yet");
             }
+            que_stmt.close();
+
             if(!incBookStock(borrow.getBookId(), -1).ok) {
                 rollback(conn);
                 return new ApiResult(false, "failed to update stock");
             }
-//            System.err.println("try borrow now");
             String insert_sql = "INSERT INTO borrow (card_id, book_id, borrow_time)" +
                     " VALUES(?, ?, ?)";
             PreparedStatement insert_stmt = conn.prepareStatement(insert_sql);
@@ -378,34 +388,17 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             insert_stmt.setInt(2, borrow.getBookId());
             insert_stmt.setLong(3, borrow.getBorrowTime());
             int len = insert_stmt.executeUpdate();
+            insert_stmt.close();
             if(len != 1) {
                 rollback(conn);
                 return new ApiResult(false, "failed to borrow");
             }
-//            System.err.println("borrow successed");
-
-//            /**************/
-//            String que2_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND borrow_time = ?";
-//            PreparedStatement que2_stmt = conn.prepareStatement(que2_sql);
-//            que2_stmt.setInt(1, borrow.getCardId());
-//            que2_stmt.setInt(2, borrow.getBookId());
-//            que2_stmt.setLong(3, borrow.getBorrowTime());
-//            ResultSet ret2 = que2_stmt.executeQuery();
-//            if(!ret2.next()) {
-//                System.err.println("a?????? no borrow record");
-//                rollback(conn);
-//                return new ApiResult(false, "No borrow record");
-//            }
             commit(conn);
+            return new ApiResult(true, null);
         } catch (Exception e) {
             rollback(conn);
             return new ApiResult(false, e.getMessage());
         }
-//        System.err.println("borrow");
-//        System.err.println(borrow.getCardId());
-//        System.err.println(borrow.getBookId());
-//        System.err.println(borrow.getBorrowTime());
-        return new ApiResult(true, null);
     }
 
     /*
@@ -414,14 +407,10 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
      */
     @Override
     public ApiResult returnBook(Borrow borrow) {
-
-//        showBorrowHistory(borrow.getCardId());
-//        System.err.println("try return");
-//        System.err.println(borrow.getCardId());
-//        System.err.println(borrow.getBookId());
-//        System.err.println(borrow.getBorrowTime());
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
+            conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
             String que_sql = "SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND borrow_time = ?";
             PreparedStatement que_stmt = conn.prepareStatement(que_sql);
             que_stmt.setInt(1, borrow.getCardId());
@@ -433,18 +422,15 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             }
             ResultSet ret = que_stmt.executeQuery();
             if(!ret.next()) {
-//                System.err.println("no borrow record");
                 rollback(conn);
                 return new ApiResult(false, "No borrow record");
             }
             if(!incBookStock(borrow.getBookId(), 1).ok) {
-//                System.err.println("stock");
                 rollback(conn);
                 return new ApiResult(false, "failed to update stock");
             }
             String insert_sql = "UPDATE borrow SET return_time = ? " +
                     "WHERE card_id = ? AND book_id = ? AND borrow_time = ?";
-//            System.err.println(insert_sql);
             PreparedStatement insert_stmt = conn.prepareStatement(insert_sql);
             insert_stmt.setLong(1, borrow.getReturnTime());
             insert_stmt.setInt(2, borrow.getCardId());
@@ -452,7 +438,6 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             insert_stmt.setLong(4, borrow.getBorrowTime());
             int len = insert_stmt.executeUpdate();
             if(len != 1) {
-//                System.err.println("len != 1");
                 rollback(conn);
                 return new ApiResult(false, "failed to return");
             }
@@ -472,14 +457,12 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult showBorrowHistory(int cardId) {
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
             String show_sql = "SELECT * FROM borrow NATURAL JOIN book WHERE card_id = ? ORDER BY borrow_time DESC, book_id ASC";
             PreparedStatement stmt = conn.prepareStatement(show_sql);
             stmt.setInt(1, cardId);
-//            System.err.println("show borrow history");
-//            System.err.println(show_sql);
             ResultSet ret = stmt.executeQuery();
             List<BorrowHistories.Item> items = new ArrayList<>();
-//            System.err.println("show borrow history");
             while(ret.next()) {
                 BorrowHistories.Item item = new BorrowHistories.Item();
                 item.setAuthor(ret.getString("author"));
@@ -492,7 +475,6 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 item.setReturnTime(ret.getLong("return_time"));
                 item.setPublishYear(ret.getInt("publish_year"));
                 item.setCardId(ret.getInt("card_id"));
-//                System.err.println(item.getBookId());
                 items.add(item);
             }
             commit(conn);
@@ -511,10 +493,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult registerCard(Card card) {
         Connection conn = connector.getConn();
         try {
-//            `card_id` int not null auto_increment,
-//    `name` varchar(63) not null,
-//    `department` varchar(63) not null,
-//    `type` char(1) not null,
+            conn.setAutoCommit(false);
             String que_sql = "SELECT * FROM card WHERE " +
                     "name = ? AND department = ? AND type = ?";
             PreparedStatement que_stmt = conn.prepareStatement(que_sql);
@@ -559,12 +538,12 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
         showBorrowHistory(cardId);
         Connection conn = connector.getConn();
         try {
+            conn.setAutoCommit(false);
             String card_sql = "SELECT * FROM card WHERE card_id = ?";
             PreparedStatement card_stmt = conn.prepareStatement(card_sql);
             card_stmt.setInt(1, cardId);
             ResultSet ret0 = card_stmt.executeQuery();
             if(!ret0.next()) {
-//                System.err.println("card not exists");
                 rollback(conn);
                 return new ApiResult(false, "card not exists");
             }
@@ -573,16 +552,17 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             que_stmt.setInt(1, cardId);
             ResultSet ret = que_stmt.executeQuery();
             if(ret.next()){
-//                System.err.println("book been borrowed");
                 rollback(conn);
                 return new ApiResult(false, "book been borrowed");
             }
-//            System.err.println("now delte the card");
             String del_sql = "DELETE FROM card WHERE card_id = ?";
             PreparedStatement del_stmt = conn.prepareStatement(del_sql);
             del_stmt.setInt(1, cardId);
             int ret1 = del_stmt.executeUpdate();
-            assert(ret1 == 1);
+            if(ret1 != 1) {
+                rollback(conn);
+                return new ApiResult(false, "fail to remove the card");
+            }
             commit(conn);
         } catch (Exception e) {
             rollback(conn);
@@ -598,7 +578,8 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult showCards() {
         Connection conn = connector.getConn();
         try {
-            String show_sql = "SELECT * FROM card";
+            conn.setAutoCommit(false);
+            String show_sql = "SELECT * FROM card ORDER BY card_id";
             PreparedStatement stmt = conn.prepareStatement(show_sql);
             ResultSet ret = stmt.executeQuery();
             List<Card> cards = new ArrayList<>();;

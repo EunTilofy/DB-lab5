@@ -68,7 +68,6 @@ public class LibraryTest {
             System.out.println("Failed to release database connection.");
         }
     }
-
     @Test
     public void bookRegisterTest() {
         Book b0 = new Book("Computer Science", "Database System Concepts",
